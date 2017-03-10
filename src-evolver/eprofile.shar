@@ -1,0 +1,391 @@
+# This is a shell archive.  Save it in a file, remove anything before
+# this line, and then unpack it by entering "sh file".  Note, it may
+# create directories; files and directories will be owned by you and
+# have default permissions.
+#
+# This archive contains:
+#
+#	eprofile
+#
+echo x - eprofile
+sed 's/^X//' >eprofile << 'END-of-eprofile'
+X#!/usr/bin/perl -w
+X
+X#===============================================================================
+X#           ___ ___         __                   
+X#   .-----.|   |   |.-----.|  |.--.--.-----.----.
+X#   |  -__||   |   ||  _  ||  ||  |  |  -__|   _|
+X#   |_____| \_____/ |_____||__| \___/|_____|__|  
+X#                                                  
+X#   eVolver - protein sequence generator
+X#
+X#   Computational Systems Biology Group
+X#   Department of Biological Sciences
+X#   Center for Computation & Technology
+X#   Louisiana State University
+X#   407 Choppin Hall, Baton Rouge, LA 70803, USA
+X#
+X#   http://www.brylinski.org
+X#
+X#   Report bugs to michal@brylinski.org
+X#
+X#   Copyright 2013 Michal Brylinski
+X#
+X#   This file is part of eVolver.
+X#
+X#   eVolver is free software: you can redistribute it and/or modify
+X#   it under the terms of the GNU General Public License as published by
+X#   the Free Software Foundation, either version 3 of the License, or
+X#   (at your option) any later version.
+X#
+X#   eVolver is distributed in the hope that it will be useful,
+X#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+X#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+X#   GNU General Public License for more details.
+X#
+X#   You should have received a copy of the GNU General Public License
+X#   along with eVolver. If not, see <http://www.gnu.org/licenses/>.
+X#
+X#===============================================================================
+X
+X use strict;
+X use File::Slurp;
+X use Benchmark;
+X 
+X local $| = 1;
+X 
+X print "------------------------------------------------------------\n";
+X print "                          eprofile\n";
+X print "                        version 1.0\n";
+X print "             generates structure-based profiles\n";
+X print "       report bugs and issues to michal\@brylinski.org\n";
+X print "------------------------------------------------------------\n\n";
+X 
+X if ($#ARGV < 3)
+X {
+X  print "eprofile -i <structure alignments>\n";
+X  print "         -o <output profile>\n";
+X  print "         -f <format: fasta/frtmalign, default frtmalign>\n";
+X  print "         -c <TM-score threshold, default 0.4>\n";
+X  die "\n";
+X }
+X 
+X my $finp1 = '';
+X my $fout1 = '';
+X my $ffor1 = 'frtmalign';
+X my $fcut1 = 0.4;
+X 
+X for ( my $i = 0; $i <= $#ARGV; $i++ )
+X {
+X  $finp1 = $ARGV[$i+1] if ( $ARGV[$i] eq '-i' );
+X  $fout1 = $ARGV[$i+1] if ( $ARGV[$i] eq '-o' );
+X  $ffor1 = $ARGV[$i+1] if ( $ARGV[$i] eq '-f' );
+X  $fcut1 = $ARGV[$i+1] if ( $ARGV[$i] eq '-c' );
+X }
+X 
+X die "Provide structure alignments\n" if ( !( -e $finp1 ) or !length($finp1) );
+X die "Provide output filename\n" if ( !length($fout1) );
+X 
+X die "Available formats are: fasta and frtmalign\n" if ( $ffor1 ne 'fasta' and $ffor1 ne 'frtmalign' );
+X 
+X my %res1 = ( 'A' => '0', 'C' => '0', 'D' => '2', 'E' => '2', 'F' => '5', 
+X              'G' => '1', 'H' => '6', 'I' => '0', 'K' => '4', 'L' => '0', 
+X              'M' => '0', 'N' => '3', 'P' => '5', 'Q' => '3', 'R' => '4', 
+X              'S' => '1', 'T' => '1', 'V' => '0', 'W' => '5', 'Y' => '5' );
+X 
+X my @res2 = ( 0.338799, 0.186823, 0.127220, 0.079186, 0.109858, 0.134736, 0.023379 );
+X 
+X my $bt0 = Benchmark->new;
+X 
+X print "Reading alignments ... ";
+X 
+X my @ali1 = read_file($finp1); chomp(@ali1);
+X 
+X if ( $ffor1 eq 'fasta' )
+X {
+X  if ( !( grep(/>target/, @ali1) ) or !( grep(/>template/, @ali1) ) )
+X  {
+X   print "not in fasta format\n\nFailed\n";
+X   
+X   my $bt2 = Benchmark->new;
+X   
+X   printf("\n------------------------------------------------------------\n");
+X   printf("Walltime: %s\n", timestr(timediff($bt2, $bt0)));
+X   printf("------------------------------------------------------------\n");
+X   
+X   exit(0);
+X  }
+X }
+X elsif ( $ffor1 eq 'frtmalign' )
+X {
+X  if ( !( grep(/Aligned length=/, @ali1) ) or !( grep(/residue pairs of distance/, @ali1) ) )
+X  {
+X   print "not in frtmalign format\n\nFailed\n";
+X   
+X   my $bt2 = Benchmark->new;
+X   
+X   printf("\n------------------------------------------------------------\n");
+X   printf("Walltime: %s\n", timestr(timediff($bt2, $bt0)));
+X   printf("------------------------------------------------------------\n");
+X   
+X   exit(0);
+X  }
+X }
+X 
+X my %prf1 = ();
+X 
+X my @seq1 = ();
+X 
+X my @ali2 = ();
+X 
+X my $n0 = 0;
+X 
+X my $w1 = 0;
+X 
+X if ( $ffor1 eq 'fasta' )
+X {
+X  push(@ali1, '>');
+X  
+X  foreach my $wali1 (@ali1)
+X  {
+X   if ( $wali1 =~ /\>/ )
+X   {
+X    if ( @ali2 )
+X    {
+X     if ( ++$w1 >= 2 )
+X     {
+X      my $w2 = 0;
+X      
+X      my $tar1 = '';
+X      my $tpl1 = '';
+X      my $tms1 = 0.0;
+X      
+X      foreach my $wali2 (@ali2)
+X      {
+X          if ( $wali2 =~ />target/ )
+X       {
+X        $w2 = 0;
+X       }
+X       elsif ( $wali2 =~ />template/ )
+X       {
+X        my @tt6 = split(/\ /, $wali2);
+X        
+X        $tms1 = pop(@tt6);
+X        
+X        $w2 = 1;
+X       }
+X       elsif ( !( $wali2 =~ /\>/ ) )
+X       {
+X        if ( $w2 )
+X        {
+X         $tpl1 .= $wali2;
+X        }
+X        else
+X        {
+X         $tar1 .= $wali2;
+X        }
+X       }
+X      }
+X      
+X      if ( !@seq1 )
+X      {
+X       my $tar2 = $tar1;
+X       
+X       $tar2 =~ s/\-//g;
+X       
+X       @seq1 = split(//, $tar2);
+X      }
+X      
+X      if ( $tms1 >= $fcut1 and length($tar1) and length($tpl1) )
+X      {
+X       my $n1 = -1;
+X       my $n2 = -1;
+X       
+X       for ( my $xa = 0; $xa < length($tpl1); $xa++ )
+X       {
+X        my $tt2 = substr($tar1, $xa, 1);
+X        my $tt3 = substr($tpl1, $xa, 1);
+X        
+X        $n1++ if ( $tt2 ne '-' );
+X        $n2++ if ( $tt3 ne '-' );
+X        
+X        if ( $tt2 ne '-' and $tt3 ne '-' )
+X        {
+X         if ( exists $prf1{$n1} )
+X         {
+X          $prf1{$n1} .= '&'.$res1{$tt3}.':'.$tms1;
+X         }
+X         else
+X         {
+X          $prf1{$n1} = $res1{$tt3}.':'.$tms1;
+X         }
+X        }
+X       }
+X       
+X       $n0++;
+X      }
+X      
+X      $w1 = 0;
+X      
+X      @ali2 = ();
+X     }
+X    }
+X   }
+X   
+X   push(@ali2, $wali1);
+X  }
+X }
+X 
+X elsif ( $ffor1 eq 'frtmalign' )
+X {
+X  push(@ali1, '*****');
+X  
+X  foreach my $wali1 (@ali1)
+X  {
+X   if ( $wali1 =~ /\*\*\*\*\*/ )
+X   {
+X    if ( grep(/Aligned length=/, @ali2) )
+X    {
+X     my $tms1 = 0.0;
+X     my $tar1 = '';
+X     my $tpl1 = '';
+X     
+X     my $nali2 = @ali2;
+X     
+X     for ( my $xa = 0; $xa < $nali2 - 3; $xa++ )
+X     {
+X      if ( $ali2[$xa] =~ /Aligned length=/ )
+X      {
+X       $tms1 = substr($ali2[$xa], 43, 7) * 1.0;
+X      }
+X      elsif ( $ali2[$xa] =~ /residue pairs of distance/ )
+X      {
+X       $tar1 = $ali2[$xa+3];
+X       
+X       $tpl1 = $ali2[$xa+1];
+X      }
+X     }
+X     
+X     if ( !@seq1 )
+X     {
+X      my $tar2 = $tar1;
+X      
+X      $tar2 =~ s/\-//g;
+X      
+X      @seq1 = split(//, $tar2);
+X     }
+X     
+X     if ( $tms1 >= $fcut1 and length($tar1) and length($tpl1) )
+X     {
+X      my $n1 = -1;
+X      my $n2 = -1;
+X      
+X      for ( my $xa = 0; $xa < length($tpl1); $xa++ )
+X      {
+X       my $tt2 = substr($tar1, $xa, 1);
+X       my $tt3 = substr($tpl1, $xa, 1);
+X       
+X       $n1++ if ( $tt2 ne '-' );
+X       $n2++ if ( $tt3 ne '-' );
+X       
+X       if ( $tt2 ne '-' and $tt3 ne '-' )
+X       {
+X        if ( exists $prf1{$n1} )
+X        {
+X         $prf1{$n1} .= '&'.$res1{$tt3}.':'.$tms1;
+X        }
+X        else
+X        {
+X         $prf1{$n1} = $res1{$tt3}.':'.$tms1;
+X        }
+X       }
+X      }
+X      
+X      $n0++;
+X     }
+X    }
+X    
+X    @ali2 = ();
+X   }
+X   
+X   push(@ali2, $wali1);
+X  }
+X }
+X 
+X my $nseq1 = @seq1;
+X 
+X my @out1 = ();
+X 
+X for ( my $xa = 0; $xa < $nseq1; $xa++ )
+X {
+X  my @prf2 = ();
+X  
+X  for ( my $xb = 0; $xb < 7; $xb++ )
+X  {
+X   $prf2[$xb] = 0.0;
+X  }
+X  
+X  my $n3 = 0;
+X  
+X  if ( exists $prf1{$xa} )
+X  {
+X   my @tt4 = split(/\&/, $prf1{$xa});
+X   
+X   my $tot1 = 0.0;
+X   
+X   foreach my $wtt4 (@tt4)
+X   {
+X    my @tt5 = split(/\:/, $wtt4);
+X    
+X    $prf2[$tt5[0]] += $tt5[1];
+X    
+X    $tot1 += $tt5[1];
+X    
+X    $n3++;
+X   }
+X   
+X   for ( my $xb = 0; $xb < 7; $xb++ )
+X   {
+X    $prf2[$xb] /= $tot1;
+X    
+X    my $c1 = $prf2[$xb] * $n3;
+X    
+X    $prf2[$xb] = ( $c1 + $res2[$xb] * sqrt($n3) ) / ( $n3 + sqrt($n3) );
+X   }
+X  }
+X  
+X  my $out2 = sprintf("%4d %s %5d", $xa + 1, $seq1[$xa], $n3);
+X  
+X  for ( my $xb = 0; $xb < 7; $xb++ )
+X  {
+X   $out2 .= sprintf(" %8.5f", $prf2[$xb]);
+X  }
+X  
+X  push(@out1, "$out2\n");
+X }
+X 
+X print "$n0 alignments found\n\n";
+X 
+X if ( $n0 )
+X {
+X  print "Structure-based profile written to $fout1\n";
+X  
+X  write_file($fout1, @out1);
+X }
+X else
+X {
+X  print "Not enough alignments to build the profile\n";
+X }
+X 
+X my $bt1 = Benchmark->new;
+X 
+X printf("\n------------------------------------------------------------\n");
+X printf("Walltime: %s\n", timestr(timediff($bt1, $bt0)));
+X printf("------------------------------------------------------------\n");
+X 
+X exit(0);
+X
+X 
+END-of-eprofile
+exit
+
